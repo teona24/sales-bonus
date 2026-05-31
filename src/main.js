@@ -92,15 +92,78 @@ function analyzeSalesData(data, options) {
   const sellerIndex = Object.fromEntries(
     data.sellers.map((seller) => [seller.id, seller]),
   );
+
+  Object.values(sellerIndex).forEach((seller) => {
+    seller.revenue = 0;
+    seller.profit = 0;
+    seller.sales_count = 0;
+    seller.products_sold = {};
+  });
   const productIndex = Object.fromEntries(
     data.products.map((product) => [product.sku, product]),
   );
 
   // @TODO: Расчет выручки и прибыли для каждого продавца
 
+  data.purchase_records.forEach((record) => {
+    const seller = sellerIndex[record.seller_id];
+    if (!seller) return;
+    seller.sales_count += 1;
+    seller.revenue += record.total_amount;
+
+    record.items.forEach((item) => {
+      const product = productIndex[item.sku];
+      if (!product) return;
+
+      const cost = product.purchase_price * item.quantity;
+      const revenue = calculateRevenue(item, product);
+      const profit = revenue - cost;
+
+      seller.profit += profit;
+
+      if (!seller.products_sold[item.sku]) {
+        seller.products_sold[item.sku] = 0;
+      }
+
+      seller.products_sold[item.sku] += item.quantity;
+    });
+  });
+
+  sellerStats.forEach((stat) => {
+    const seller = sellerIndex[stat.id];
+    if (seller) {
+      stat.revenue = seller.revenue;
+      stat.profit = seller.profit;
+      stat.sales_count = seller.sales_count;
+      stat.products_sold = seller.products_sold;
+    }
+  });
   // @TODO: Сортировка продавцов по прибыли
+
+  const sortedSellers = sellerStats.toSorted((a, b) => b.profit - a.profit);
 
   // @TODO: Назначение премий на основе ранжирования
 
+  const total = sortedSellers.length;
+  sortedSellers.forEach((seller, index) => {
+    seller.bonus = calculateBonus(index, total, seller);
+
+    const topProducts = Object.entries(seller.products_sold)
+      .map(([sku, quantity]) => ({ sku, quantity }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 10);
+
+    seller.top_products = topProducts;
+  });
   // @TODO: Подготовка итоговой коллекции с нужными полями
+
+  return sortedSellers.map((seller) => ({
+    seller_id: seller.id,
+    name: seller.name,
+    revenue: +seller.revenue.toFixed(2),
+    profit: +seller.profit.toFixed(2),
+    sales_count: seller.sales_count,
+    top_products: seller.top_products,
+    bonus: +seller.bonus.toFixed(2)
+  }));
 }
